@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	"net/http/pprof"
 	"os"
-	runtime_pprof "runtime/pprof"
 	"time"
 
 	"github.com/bakins/net-http-recover"
@@ -14,6 +11,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc"
 	"github.com/justinas/alice"
+
+	_ "expvar"
+	_ "net/http/pprof"
 )
 
 type (
@@ -21,21 +21,12 @@ type (
 	}
 )
 
-func attachProfiler(router *mux.Router) {
-	router.HandleFunc("/debug/pprof/", pprof.Index)
-	for _, profile := range runtime_pprof.Profiles() {
-		router.Handle(fmt.Sprintf("/debug/pprof/%s", profile.Name()), pprof.Handler(profile.Name()))
-	}
-	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-}
-
 func main() {
 	r := mux.NewRouter()
 	r.StrictSlash(true)
 
-	attachProfiler(r)
+	// default mux will have the profiler handlers
+	r.PathPrefix("/debug/").Handler(http.DefaultServeMux)
 
 	chain := alice.New(
 		handlers.CompressHandler,
