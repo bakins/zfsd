@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc"
-	"github.com/gorilla/rpc/json"
 	"github.com/justinas/alice"
 )
 
@@ -39,17 +38,17 @@ func main() {
 	attachProfiler(r)
 
 	chain := alice.New(
-		func(h http.Handler) http.Handler {
-			return handlers.CombinedLoggingHandler(os.Stdout, h)
-		},
 		handlers.CompressHandler,
+		func(h http.Handler) http.Handler {
+			return NewLogger(os.Stdout, h)
+		},
 		func(h http.Handler) http.Handler {
 			return recovery.Handler(os.Stderr, h, true)
 		},
 	)
 
 	rpcs := rpc.NewServer()
-	rpcs.RegisterCodec(json.NewCodec(), "application/json")
+	rpcs.RegisterCodec(NewCodec(), "application/json")
 	rpcs.RegisterService(&ZFS{}, "")
 
 	// TODO: unix socket
