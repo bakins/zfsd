@@ -3,9 +3,9 @@ zfsd
 
 Simple HTTP interface for ZFS.
 
-Needs a new name as the name "zfsd" is already in us by at least on other project.
+Needs a new name as the name "zfsd" is already in us by at least one other project.
 
-After struggling with working with ZFS in various languages, a few of us said "it would be nice if there was an HTTP interface that worked across all supported platform."  That was a few months ago and we never did anythign about it. So, I decided to start this in the hope others had the same itch.
+After struggling with working with ZFS in various languages, a few of us said "it would be nice if there was an HTTP interface that worked across all supported platform."  That was a few months ago and we never did anything about it. So, I decided to start this in the hope others had the same itch.
 
 ## Current Plan ##
 * HTTP API for common ZFS tasks, including snapshots and clones.
