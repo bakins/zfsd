@@ -41,7 +41,7 @@ If you just use the provisioning done in the Vagrantfile:
 
 ```
 curl --compressed -H "Content-Type: application/json" \
--X POST -sv http://localhost:9373/_rpc_ \
+-X POST -sv http://localhost:9373/_zfs_ \
 --data-binary '{"id": 1, "params": [], "method": "ZFS.List" }'
 ```
 
@@ -73,7 +73,7 @@ You can also "filter" results to a specific prefix or type.  To just get snapsho
 
 ```
 curl --compressed -H "Content-Type: application/json" \
--X POST -sv http://localhost:9373/_rpc_ \
+-X POST -sv http://localhost:9373/_zfs_ \
 --data-binary '{"id": 1, "params": [{"type":"snapshot", "prefix": "testing/A"} ],"method": "ZFS.List" }'
 ```
 
@@ -81,7 +81,7 @@ curl --compressed -H "Content-Type: application/json" \
 
 ```
 curl --compressed -H "Content-Type: application/json" \
--X POST -sv http://localhost:9373/_rpc_ \
+-X POST -sv http://localhost:9373/_zfs_ \
 --data-binary '{"id": 1, "params":[{"name": "testing/A", "snapshot": "987654321"}], "method":"ZFS.Snapshot" }'
 ```
 
@@ -102,7 +102,7 @@ Output:
 
 ```
 curl --compressed -H "Content-Type: application/json" \
--X POST -sv http://localhost:9373/_rpc_ \
+-X POST -sv http://localhost:9373/_zfs_ \
 --data-binary '{"id": 1, "params":[{"name": "testing/A", "snapshot": "987654321", "target": "testing/baz"}],"method": "ZFS.Clone" }'
 ```
 
