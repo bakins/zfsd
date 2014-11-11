@@ -1,3 +1,4 @@
+// Package main implements a simple HTTP interface for zfs management
 package main
 
 import (
@@ -23,12 +24,12 @@ type (
 		Origin      string `json:"origin,omitempty"`
 	}
 
-	ZFSListRequest struct {
+	ListRequest struct {
 		Type   string `json:"type"`
 		Prefix string `json:"prefix"`
 	}
 
-	ZFSGetRequest struct {
+	GetRequest struct {
 		Name string `json:"name"`
 	}
 
@@ -61,7 +62,8 @@ type (
 	}
 )
 
-func (z *ZFS) List(r *http.Request, req *ZFSListRequest, resp *[]*Dataset) error {
+// List retrieves a list of all ZFS datasets, optionally only of a certain type or prefix
+func (z *ZFS) List(r *http.Request, req *ListRequest, resp *[]*Dataset) error {
 	if req.Type == "" {
 		req.Type = "all"
 	}
@@ -73,7 +75,8 @@ func (z *ZFS) List(r *http.Request, req *ZFSListRequest, resp *[]*Dataset) error
 	return nil
 }
 
-func (z *ZFS) Get(r *http.Request, req *ZFSGetRequest, resp *Dataset) error {
+// Get retrieves a single ZFS dataset.
+func (z *ZFS) Get(r *http.Request, req *GetRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
@@ -86,6 +89,7 @@ func (z *ZFS) Get(r *http.Request, req *ZFSGetRequest, resp *Dataset) error {
 	return nil
 }
 
+// Set sets properties on a ZFS dataset.
 func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
@@ -115,6 +119,7 @@ func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *Dataset) error {
 	return nil
 }
 
+// Snapshot creates a snapshot of a ZFS dataset.
 func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
@@ -147,6 +152,7 @@ func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) err
 	return nil
 }
 
+// Clone clones a ZFS snapshot
 func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
@@ -182,6 +188,7 @@ func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
 	return nil
 }
 
+// Destroy removes a ZFS dataset
 func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
@@ -202,6 +209,7 @@ func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *Dataset) error
 	return nil
 }
 
+// Rollback rolls the given dataset to back a previous snapshot.
 func (z *ZFS) Rollback(r *http.Request, req *RollbackRequest, resp *Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
