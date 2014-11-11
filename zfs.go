@@ -1,25 +1,12 @@
 package main
 
-// based on https://github.com/mistifyio/go-zfs
-
-// TODO: investigate getting rid of all the reflection
-
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"io"
-	"os/exec"
-	"reflect"
-	"strconv"
-	"strings"
+	"net/http"
 )
 
 type (
-	command struct {
-		Command string
-		Stdin   io.Reader
-		Stdout  io.Writer
-	}
 
 	// Dataset is a zfs dataset.  This could be a volume, filesystem, snapshot. Check the type field
 	// The field definitions can be found in the zfs manual: http://www.freebsd.org/cgi/man.cgi?zfs(8)
@@ -35,149 +22,221 @@ type (
 		Quota       uint64 `json:"quota,omitempty"`
 		Origin      string `json:"origin,omitempty"`
 	}
+
+	ZFSListRequest struct {
+		Type   string `json:"type"`
+		Prefix string `json:"prefix"`
+	}
+
+	ZFSGetRequest struct {
+		Name string `json:"name"`
+	}
+
+	SetRequest struct {
+		Name       string            `json:"name"`
+		Properties map[string]string `json:"properties,omitempty"`
+	}
+
+	SnapshotRequest struct {
+		Name     string `json:"name"`
+		Snapshot string `json:"snapshot"`
+	}
+
+	RollbackRequest struct {
+		Name      string `json:"name"`
+		Snapshot  string `json:"snapshot"`
+		Recursive bool   `json:"recursive"`
+	}
+
+	CloneRequest struct {
+		Name       string            `json:"name"`
+		Snapshot   string            `json:"snapshot"`
+		Target     string            `json:"target"`
+		Properties map[string]string `json:"properties,omitempty"`
+	}
+
+	DestroyRequest struct {
+		Name      string `json:"name"`
+		Recursive bool   `json:"recursive"`
+	}
 )
 
-// helper function to wrap typical calls to zfs
-func zfs(arg ...string) ([][]string, error) {
-	c := command{Command: "zfs"}
-	return c.Run(arg...)
-}
-
-func (c *command) Run(arg ...string) ([][]string, error) {
-
-	cmd := exec.Command(c.Command, arg...)
-
-	var stdout, stderr bytes.Buffer
-
-	if c.Stdout == nil {
-		cmd.Stdout = &stdout
-	} else {
-		cmd.Stdout = c.Stdout
+func (z *ZFS) List(r *http.Request, req *ZFSListRequest, resp *[]*Dataset) error {
+	if req.Type == "" {
+		req.Type = "all"
 	}
-
-	if c.Stdin != nil {
-		cmd.Stdin = c.Stdin
-
-	}
-	cmd.Stderr = &stderr
-
-	debug := strings.Join([]string{cmd.Path, strings.Join(cmd.Args, " ")}, " ")
-	fmt.Println(debug)
-	err := cmd.Run()
-
+	ds, err := listByType(req.Type, req.Prefix)
 	if err != nil {
-		return nil, fmt.Errorf(stderr.String())
+		return err
 	}
-
-	// assume if you passed in something for stdout, that you know what to do with it
-	if c.Stdout != nil {
-		return nil, nil
-	}
-
-	lines := strings.Split(stdout.String(), "\n")
-
-	//last line is always blank
-	lines = lines[0 : len(lines)-1]
-	output := make([][]string, len(lines))
-
-	for i, l := range lines {
-		output[i] = strings.Split(l, "\t")
-	}
-
-	return output, nil
+	*resp = ds
+	return nil
 }
 
-var propertyFields = make([]string, 0, 66)
-var propertyMap = map[string]string{}
-
-func init() {
-	st := reflect.TypeOf(Dataset{})
-	for i := 0; i < st.NumField(); i++ {
-		f := st.Field(i)
-		// only look at exported values
-		if f.PkgPath == "" {
-			key := strings.ToLower(f.Name)
-			propertyMap[key] = f.Name
-			propertyFields = append(propertyFields, key)
-		}
+func (z *ZFS) Get(r *http.Request, req *ZFSGetRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
 	}
 
-}
-
-func parseDatasetLine(line []string) (*Dataset, error) {
-	dataset := Dataset{}
-
-	st := reflect.ValueOf(&dataset).Elem()
-
-	for j, field := range propertyFields {
-
-		fieldName := propertyMap[field]
-
-		if fieldName == "" {
-			continue
-		}
-
-		f := st.FieldByName(fieldName)
-		value := line[j]
-
-		switch f.Kind() {
-
-		case reflect.Uint64:
-			var v uint64
-			if value != "-" {
-				v, _ = strconv.ParseUint(value, 10, 64)
-			}
-			f.SetUint(v)
-
-		case reflect.String:
-			v := ""
-			if value != "-" {
-				v = value
-			}
-			f.SetString(v)
-
-		}
-	}
-	return &dataset, nil
-}
-
-func parseDatasetLines(lines [][]string) ([]*Dataset, error) {
-	datasets := make([]*Dataset, len(lines))
-
-	for i, line := range lines {
-		d, _ := parseDatasetLine(line)
-		datasets[i] = d
-	}
-
-	return datasets, nil
-}
-
-func listByType(t, filter string) ([]*Dataset, error) {
-	args := []string{"list", "-t", t, "-rHpo", strings.Join(propertyFields, ",")}[:]
-	if filter != "" {
-		args = append(args, filter)
-	}
-	out, err := zfs(args...)
+	ds, err := getDataset(req.Name)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return parseDatasetLines(out)
+	*resp = *ds
+	return nil
 }
 
-func propsSlice(properties map[string]string) []string {
-	args := make([]string, 0, len(properties)*3)
-	for k, v := range properties {
-		args = append(args, "-o")
+func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
+	}
+	if req.Properties == nil || len(req.Properties) == 0 {
+		return errors.New("must have properties")
+	}
+	ds, err := getDataset(req.Name)
+
+	args := make([]string, 1, 2+(len(req.Properties)*2))
+	args[0] = "set"
+
+	for k, v := range req.Properties {
 		args = append(args, fmt.Sprintf("%s=%s", k, v))
 	}
-	return args
+	args = append(args, req.Name)
+	_, err = zfs(args...)
+	if err != nil {
+		return err
+	}
+
+	ds, err = getDataset(req.Name)
+	if err != nil {
+		return err
+	}
+	*resp = *ds
+	return nil
 }
 
-// GetDataset retrieves a single dataset
-func getDataset(name string) (*Dataset, error) {
-	out, err := zfs("list", "-Hpo", strings.Join(propertyFields, ","), name)
-	if err != nil {
-		return nil, err
+func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
 	}
-	return parseDatasetLine(out[0])
+
+	if req.Snapshot == "" {
+		return errors.New("must have snapshot")
+	}
+
+	ds, err := getDataset(req.Name)
+	if err != nil {
+		return err
+	}
+
+	args := make([]string, 1, 4)
+	args[0] = "snapshot"
+
+	snapName := fmt.Sprintf("%s@%s", ds.Name, req.Snapshot)
+	args = append(args, snapName)
+	_, err = zfs(args...)
+	if err != nil {
+		return err
+	}
+	snap, err := getDataset(snapName)
+	if err != nil {
+		return err
+	}
+
+	*resp = *snap
+	return nil
+}
+
+func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
+	}
+
+	if req.Snapshot == "" {
+		return errors.New("must have snapshot")
+	}
+
+	if req.Target == "" {
+		return errors.New("must have target")
+	}
+
+	snapName := fmt.Sprintf("%s@%s", req.Name, req.Snapshot)
+
+	args := make([]string, 1, 4)
+	args[0] = "clone"
+	if req.Properties != nil {
+		args = append(args, propsSlice(req.Properties)...)
+	}
+	args = append(args, []string{req.Name, req.Target}...)
+	_, err = zfs(args...)
+	if err != nil {
+		return err
+	}
+
+	ds, err := getDataset(req.Target)
+	if err != nil {
+		return err
+	}
+
+	*resp = *ds
+	return nil
+}
+
+func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
+	}
+
+	args := make([]string, 1, 3)
+	args[0] = "destroy"
+	if req.Recursive {
+		args = append(args, "-r")
+	}
+	args = append(args, ds.Name)
+
+	_, err = zfs(args...)
+	if err != nil {
+		return err
+	}
+	*resp = *ds
+	return nil
+}
+
+func (z *ZFS) Rollback(r *http.Request, req *RollbackRequest, resp *Dataset) error {
+	if req.Name == "" {
+		return errors.New("must have name")
+	}
+
+	if req.Snapshot == "" {
+		return errors.New("must have snapshot")
+	}
+
+	snapName := fmt.Sprintf("%s@%s", req.Name, req.Snapshot)
+	snap, err := getDataset(snapName)
+	if err != nil {
+		return err
+	}
+
+	if snap.Type != "snapshot" {
+		return errors.New("not a snapshot")
+	}
+
+	args := make([]string, 1, 3)
+	args[0] = "rollback"
+	if req.Recursive {
+		args = append(args, "-r")
+	}
+	args = append(args, snapName)
+
+	_, err = zfs(args...)
+	if err != nil {
+		return err
+	}
+
+	ds, err := getDataset(req.Name)
+	if err != nil {
+		return err
+	}
+	*resp = *ds
+	return nil
 }
