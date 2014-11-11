@@ -6,19 +6,15 @@ import (
 	"os"
 	"time"
 
+	_ "expvar"
+	_ "net/http/pprof"
+
 	"github.com/bakins/net-http-recover"
+	"github.com/bakins/zfsd"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc"
 	"github.com/justinas/alice"
-
-	_ "expvar"
-	_ "net/http/pprof"
-)
-
-type (
-	ZFS struct {
-	}
 )
 
 func main() {
@@ -40,7 +36,7 @@ func main() {
 
 	rpcs := rpc.NewServer()
 	rpcs.RegisterCodec(NewCodec(), "application/json")
-	rpcs.RegisterService(&ZFS{}, "")
+	rpcs.RegisterService(&zfsd.ZFS{}, "")
 
 	// TODO: unix socket
 	s := &http.Server{

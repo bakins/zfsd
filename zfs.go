@@ -1,5 +1,5 @@
 // Package main implements a simple HTTP interface for zfs management
-package main
+package zfsd
 
 import (
 	"errors"
@@ -8,6 +8,10 @@ import (
 )
 
 type (
+
+	// ZFS is used for RPC services
+	ZFS struct {
+	}
 
 	// Dataset is a zfs dataset.  This could be a volume, filesystem, snapshot. Check the type field
 	// The field definitions can be found in the zfs manual: http://www.freebsd.org/cgi/man.cgi?zfs(8)

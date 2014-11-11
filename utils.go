@@ -1,4 +1,4 @@
-package main
+package zfsd
 
 // based on https://github.com/mistifyio/go-zfs
 
