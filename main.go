@@ -51,7 +51,7 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	r.Handle("/_rpc_", chain.Then(rpcs))
+	r.Handle("/_zfs_", chain.Then(rpcs))
 	log.Fatal(s.ListenAndServe())
 
 }
