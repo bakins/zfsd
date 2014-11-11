@@ -167,8 +167,8 @@ func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
 	if req.Properties != nil {
 		args = append(args, propsSlice(req.Properties)...)
 	}
-	args = append(args, []string{req.Name, req.Target}...)
-	_, err = zfs(args...)
+	args = append(args, []string{snapName, req.Target}...)
+	_, err := zfs(args...)
 	if err != nil {
 		return err
 	}
@@ -192,13 +192,13 @@ func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *Dataset) error
 	if req.Recursive {
 		args = append(args, "-r")
 	}
-	args = append(args, ds.Name)
+	args = append(args, req.Name)
 
-	_, err = zfs(args...)
+	_, err := zfs(args...)
 	if err != nil {
 		return err
 	}
-	*resp = *ds
+	*resp = Dataset{Name: req.Name}
 	return nil
 }
 
