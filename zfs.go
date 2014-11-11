@@ -2,6 +2,8 @@ package main
 
 // based on https://github.com/mistifyio/go-zfs
 
+// TODO: investigate getting rid of all the reflection
+
 import (
 	"bytes"
 	"fmt"
@@ -64,7 +66,7 @@ func (c *command) Run(arg ...string) ([][]string, error) {
 	err := cmd.Run()
 
 	if err != nil {
-		return nil, fmt.Errorf("%s: '%s' => %s", err, debug, stderr.String())
+		return nil, fmt.Errorf(stderr.String())
 	}
 
 	// assume if you passed in something for stdout, that you know what to do with it
