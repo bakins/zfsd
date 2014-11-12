@@ -26,7 +26,7 @@ import (
 func main() {
 	var address string
 	var perms uint
-	flag.StringVar(&address, "address", "/tmp/zfsd.sock", "TCP Address or unix socket to listen")
+	flag.StringVar(&address, "address", ":9373", "TCP Address or unix socket to listen")
 	flag.UintVar(&perms, "perms", 0700, "permissions for unix socket")
 	flag.Parse()
 
