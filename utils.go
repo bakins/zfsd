@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"reflect"
 	"strconv"
 	"strings"
 )
@@ -72,73 +71,8 @@ func (c *command) Run(arg ...string) ([][]string, error) {
 	return output, nil
 }
 
-var propertyFields = make([]string, 0, 66)
-var propertyMap = map[string]string{}
-
-func init() {
-	st := reflect.TypeOf(Dataset{})
-	for i := 0; i < st.NumField(); i++ {
-		f := st.Field(i)
-		// only look at exported values
-		if f.PkgPath == "" {
-			key := strings.ToLower(f.Name)
-			propertyMap[key] = f.Name
-			propertyFields = append(propertyFields, key)
-		}
-	}
-
-}
-
-func parseDatasetLine(line []string) (*Dataset, error) {
-	dataset := Dataset{}
-
-	st := reflect.ValueOf(&dataset).Elem()
-
-	for j, field := range propertyFields {
-
-		fieldName := propertyMap[field]
-
-		if fieldName == "" {
-			continue
-		}
-
-		f := st.FieldByName(fieldName)
-		value := line[j]
-
-		switch f.Kind() {
-
-		case reflect.Uint64:
-			var v uint64
-			if value != "-" {
-				v, _ = strconv.ParseUint(value, 10, 64)
-			}
-			f.SetUint(v)
-
-		case reflect.String:
-			v := ""
-			if value != "-" {
-				v = value
-			}
-			f.SetString(v)
-
-		}
-	}
-	return &dataset, nil
-}
-
-func parseDatasetLines(lines [][]string) ([]*Dataset, error) {
-	datasets := make([]*Dataset, len(lines))
-
-	for i, line := range lines {
-		d, _ := parseDatasetLine(line)
-		datasets[i] = d
-	}
-
-	return datasets, nil
-}
-
 func listByType(t, filter string) ([]*Dataset, error) {
-	args := []string{"list", "-t", t, "-rHpo", strings.Join(propertyFields, ",")}[:]
+	args := []string{"get", "all", "-t", t, "-rHp"}
 	if filter != "" {
 		args = append(args, filter)
 	}
@@ -146,7 +80,20 @@ func listByType(t, filter string) ([]*Dataset, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseDatasetLines(out)
+
+	datasets := make([]*Dataset, 0)
+	name := ""
+	var ds *Dataset
+	for _, line := range out {
+		if name != line[0] {
+			name = line[0]
+			ds = &Dataset{Name: name}
+			datasets = append(datasets, ds)
+		}
+		ds.parseLine(line)
+	}
+
+	return datasets, nil
 }
 
 func propsSlice(properties map[string]string) []string {
@@ -158,11 +105,57 @@ func propsSlice(properties map[string]string) []string {
 	return args
 }
 
+func setString(field *string, value string) {
+	v := ""
+	if value != "-" {
+		v = value
+	}
+	*field = v
+}
+
+func setUint(field *uint64, value string) {
+	var v uint64
+	if value != "-" {
+		v, _ = strconv.ParseUint(value, 10, 64)
+	}
+	*field = v
+}
+
+func (ds *Dataset) parseLine(line []string) {
+	prop := line[1]
+	val := line[2]
+
+	switch prop {
+	case "available":
+		setUint(&ds.Available, val)
+	case "compression":
+		setString(&ds.Compression, val)
+	case "mountpoint":
+		setString(&ds.Mountpoint, val)
+	case "quota":
+		setUint(&ds.Quota, val)
+	case "type":
+		setString(&ds.Type, val)
+	case "used":
+		setUint(&ds.Used, val)
+	case "volsize":
+		setUint(&ds.Volsize, val)
+	case "written":
+		setUint(&ds.Written, val)
+	}
+}
+
 // GetDataset retrieves a single dataset
 func getDataset(name string) (*Dataset, error) {
-	out, err := zfs("list", "-Hpo", strings.Join(propertyFields, ","), name)
+	out, err := zfs("get", "all", "-Hp", name)
 	if err != nil {
 		return nil, err
 	}
-	return parseDatasetLine(out[0])
+
+	ds := &Dataset{Name: name}
+	for _, line := range out {
+		ds.parseLine(line)
+	}
+
+	return ds, nil
 }
