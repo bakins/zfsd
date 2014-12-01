@@ -5,27 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"gopkg.in/mistifyio/go-zfs.v1"
 )
 
 type (
 
 	// ZFS is used for RPC services
 	ZFS struct {
-	}
-
-	// Dataset is a zfs dataset.  This could be a volume, filesystem, snapshot. Check the type field
-	// The field definitions can be found in the zfs manual: http://www.freebsd.org/cgi/man.cgi?zfs(8)
-	Dataset struct {
-		Name        string `json:"name"`
-		Used        uint64 `json:"used,omitempty"`
-		Available   uint64 `json:"available,omitempty"`
-		Mountpoint  string `json:"mountpoint,omitempty"`
-		Compression string `json:"compression,omitempty"`
-		Type        string `json:"type"`
-		Written     uint64 `json:"written,omitempty"`
-		Volsize     uint64 `json:"volsize,omitempty"`
-		Quota       uint64 `json:"quota,omitempty"`
-		Origin      string `json:"origin,omitempty"`
 	}
 
 	ListRequest struct {
@@ -67,11 +54,22 @@ type (
 )
 
 // List retrieves a list of all ZFS datasets, optionally only of a certain type or prefix
-func (z *ZFS) List(r *http.Request, req *ListRequest, resp *[]*Dataset) error {
-	if req.Type == "" {
-		req.Type = "all"
+func (z *ZFS) List(r *http.Request, req *ListRequest, resp *[]*zfs.Dataset) error {
+
+	var ds []*zfs.Dataset
+	var err error
+	switch req.Type {
+	case "snapshot":
+		ds, err = zfs.Snapshots(req.Prefix)
+	case "filesystem":
+		ds, err = zfs.Filesystems(req.Prefix)
+	case "volume":
+		ds, err = zfs.Volumes(req.Prefix)
+	case "", "all":
+		ds, err = zfs.Datasets(req.Prefix)
+	default:
+		fmt.Errorf("unknown type: %s", req.Type)
 	}
-	ds, err := listByType(req.Type, req.Prefix)
 	if err != nil {
 		return err
 	}
@@ -80,12 +78,12 @@ func (z *ZFS) List(r *http.Request, req *ListRequest, resp *[]*Dataset) error {
 }
 
 // Get retrieves a single ZFS dataset.
-func (z *ZFS) Get(r *http.Request, req *GetRequest, resp *Dataset) error {
+func (z *ZFS) Get(r *http.Request, req *GetRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
 
-	ds, err := getDataset(req.Name)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
@@ -94,28 +92,27 @@ func (z *ZFS) Get(r *http.Request, req *GetRequest, resp *Dataset) error {
 }
 
 // Set sets properties on a ZFS dataset.
-func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *Dataset) error {
+func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
 	if req.Properties == nil || len(req.Properties) == 0 {
 		return errors.New("must have properties")
 	}
-	ds, err := getDataset(req.Name)
 
-	args := make([]string, 1, 2+(len(req.Properties)*2))
-	args[0] = "set"
-
-	for k, v := range req.Properties {
-		args = append(args, fmt.Sprintf("%s=%s", k, v))
-	}
-	args = append(args, req.Name)
-	_, err = zfs(args...)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
 
-	ds, err = getDataset(req.Name)
+	// zfs should have a setproperties that takes a map
+	for k, v := range req.Properties {
+		err := ds.SetProperty(k, v)
+		if err != nil {
+			return err
+		}
+	}
+	ds, err = zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
@@ -124,7 +121,7 @@ func (z *ZFS) Set(r *http.Request, req *SetRequest, resp *Dataset) error {
 }
 
 // Snapshot creates a snapshot of a ZFS dataset.
-func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) error {
+func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
@@ -133,21 +130,12 @@ func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) err
 		return errors.New("must have snapshot")
 	}
 
-	ds, err := getDataset(req.Name)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
 
-	args := make([]string, 1, 4)
-	args[0] = "snapshot"
-
-	snapName := fmt.Sprintf("%s@%s", ds.Name, req.Snapshot)
-	args = append(args, snapName)
-	_, err = zfs(args...)
-	if err != nil {
-		return err
-	}
-	snap, err := getDataset(snapName)
+	snap, err := ds.Snapshot(req.Snapshot, false)
 	if err != nil {
 		return err
 	}
@@ -157,7 +145,7 @@ func (z *ZFS) Snapshot(r *http.Request, req *SnapshotRequest, resp *Dataset) err
 }
 
 // Clone clones a ZFS snapshot
-func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
+func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
@@ -170,51 +158,41 @@ func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *Dataset) error {
 		return errors.New("must have target")
 	}
 
-	snapName := fmt.Sprintf("%s@%s", req.Name, req.Snapshot)
-
-	args := make([]string, 1, 4)
-	args[0] = "clone"
-	if req.Properties != nil {
-		args = append(args, propsSlice(req.Properties)...)
-	}
-	args = append(args, []string{snapName, req.Target}...)
-	_, err := zfs(args...)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
 
-	ds, err := getDataset(req.Target)
+	clone, err := ds.Clone(req.Target, req.Properties)
 	if err != nil {
 		return err
 	}
 
-	*resp = *ds
+	*resp = *clone
 	return nil
 }
 
 // Destroy removes a ZFS dataset
-func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *Dataset) error {
+func (z *ZFS) Destroy(r *http.Request, req *DestroyRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
 
-	args := make([]string, 1, 3)
-	args[0] = "destroy"
-	if req.Recursive {
-		args = append(args, "-r")
-	}
-	args = append(args, req.Name)
-
-	_, err := zfs(args...)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
-	*resp = Dataset{Name: req.Name}
+
+	err = ds.Destroy(req.Recursive)
+	if err != nil {
+		return err
+	}
+	*resp = *ds
 	return nil
 }
 
 // Rollback rolls the given dataset to back a previous snapshot.
-func (z *ZFS) Rollback(r *http.Request, req *RollbackRequest, resp *Dataset) error {
+func (z *ZFS) Rollback(r *http.Request, req *RollbackRequest, resp *zfs.Dataset) error {
 	if req.Name == "" {
 		return errors.New("must have name")
 	}
@@ -224,31 +202,21 @@ func (z *ZFS) Rollback(r *http.Request, req *RollbackRequest, resp *Dataset) err
 	}
 
 	snapName := fmt.Sprintf("%s@%s", req.Name, req.Snapshot)
-	snap, err := getDataset(snapName)
+	snap, err := zfs.GetDataset(snapName)
 	if err != nil {
 		return err
 	}
 
-	if snap.Type != "snapshot" {
-		return errors.New("not a snapshot")
-	}
-
-	args := make([]string, 1, 3)
-	args[0] = "rollback"
-	if req.Recursive {
-		args = append(args, "-r")
-	}
-	args = append(args, snapName)
-
-	_, err = zfs(args...)
+	err = snap.Rollback(false)
 	if err != nil {
 		return err
 	}
 
-	ds, err := getDataset(req.Name)
+	ds, err := zfs.GetDataset(req.Name)
 	if err != nil {
 		return err
 	}
+
 	*resp = *ds
 	return nil
 }
