@@ -158,12 +158,13 @@ func (z *ZFS) Clone(r *http.Request, req *CloneRequest, resp *zfs.Dataset) error
 		return errors.New("must have target")
 	}
 
-	ds, err := zfs.GetDataset(req.Name)
+	snapName := fmt.Sprintf("%s@%s", req.Name, req.Snapshot)
+	snap, err := zfs.GetDataset(snapName)
 	if err != nil {
 		return err
 	}
 
-	clone, err := ds.Clone(req.Target, req.Properties)
+	clone, err := snap.Clone(req.Target, req.Properties)
 	if err != nil {
 		return err
 	}
