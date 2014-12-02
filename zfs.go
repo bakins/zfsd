@@ -1,4 +1,4 @@
-// Package main implements a simple HTTP interface for zfs management
+// Package zfsd implements a simple HTTP interface for zfs management
 package zfsd
 
 import (
@@ -15,31 +15,37 @@ type (
 	ZFS struct {
 	}
 
+	// ListRequest is used to list ZFS datasets
 	ListRequest struct {
 		Type   string `json:"type"`
 		Prefix string `json:"prefix"`
 	}
 
+	// GetRequest is used to get a single ZFS dataset
 	GetRequest struct {
 		Name string `json:"name"`
 	}
 
+	// SetRequest is used to set properties on a ZFS dataset
 	SetRequest struct {
 		Name       string            `json:"name"`
 		Properties map[string]string `json:"properties,omitempty"`
 	}
 
+	// SnapshotRequest is used to create a ZFS snapshot
 	SnapshotRequest struct {
 		Name     string `json:"name"`
 		Snapshot string `json:"snapshot"`
 	}
 
+	// RollbackRequest is used to rollback a ZFS snapshot
 	RollbackRequest struct {
 		Name      string `json:"name"`
 		Snapshot  string `json:"snapshot"`
 		Recursive bool   `json:"recursive"`
 	}
 
+	// CloneRequest is used to clone a ZFS snapshot
 	CloneRequest struct {
 		Name       string            `json:"name"`
 		Snapshot   string            `json:"snapshot"`
@@ -47,6 +53,7 @@ type (
 		Properties map[string]string `json:"properties,omitempty"`
 	}
 
+	// DestroyRequest is used to destroy a ZFS dataset
 	DestroyRequest struct {
 		Name      string `json:"name"`
 		Recursive bool   `json:"recursive"`
